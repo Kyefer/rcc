@@ -19,14 +19,8 @@ pub struct Function {
 }
 
 #[derive(Debug)]
-pub struct UnaryOperation {
-    pub operator: char,
-    pub exp: Expression,
-}
-
-#[derive(Debug)]
 pub enum Expression {
-    UnOp(Box<UnaryOperation>),
+    UnaryOperation { operator: Operator, exp: Box<Expression>},
     Const(u32),
 }
 
@@ -73,6 +67,7 @@ fn parse_fn(mut tokens: &mut VecDeque<Token>) -> Function {
     };
 
     simple_match!(&mut tokens, TokenType::Symbol { stype: Symbol::LeftParenthesis, .. });
+    // Parse arguments
     simple_match!(&mut tokens, TokenType::Symbol { stype: Symbol::RightParenthesis, .. });
     simple_match!(&mut tokens, TokenType::Symbol { stype: Symbol::LeftBrace, .. });
 
@@ -97,7 +92,7 @@ fn parse_statement(mut tokens: &mut VecDeque<Token>) -> Statement {
     }
 }
 
-fn parse_exp(tokens: &mut VecDeque<Token>) -> Expression {
+fn parse_exp(mut tokens: &mut VecDeque<Token>) -> Expression {
     match tokens.pop_front() {
         Some(Token { ttype: TokenType::Integer {itype, ..}, value: Some(ref num) }) => {
             let int = match itype {
@@ -106,7 +101,13 @@ fn parse_exp(tokens: &mut VecDeque<Token>) -> Expression {
                     u32::from_str_radix(num.trim_left_matches("0x"), 16).unwrap()
                 }
             };
-            return Expression::Const(int);
+            Expression::Const(int)
+        },
+        Some(Token {ttype: TokenType::Operator {otype, ..}, ..}) => {
+            Expression::UnaryOperation {
+                operator: *otype,
+                exp: Box::new(parse_exp(&mut tokens))
+            }
         },
         _ => panic!("Unexpected token in exp")
     }

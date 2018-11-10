@@ -17,5 +17,5 @@ fn main() {
     let tokens = lexer::lex(&source);
     // lexer::print_tokens(&tokens);
     let prog = parser::parse(tokens);
-    // parser::print_program(prog);
+    parser::print_program(prog);
 }

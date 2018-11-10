@@ -16,7 +16,7 @@ pub enum Symbol {
     Semicolon,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub enum Operator {
     Negate,
     Not,
@@ -174,9 +174,7 @@ pub fn lex(code: &String) -> VecDeque<Token> {
     while !source.is_empty() {
         let mut found = false;
         for pattern in &patterns {
-            let m = pattern.regex.find(&source);
-            if m != None {
-                let tok = m.unwrap();
+            if let Some(tok) =  pattern.regex.find(&source){
                 let val = match pattern.ttype {
                     TokenType::Integer { .. } | TokenType::Identifier { .. } => {
                         Some(String::from(tok.as_str().trim()))
