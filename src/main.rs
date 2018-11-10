@@ -20,130 +20,142 @@ fn main() {
 }
 
 enum TokenType {
-    Keyword,
-    Symbol,
-    Operator,
-    Integer,
-    Identifier,
+    Symbol { regex: &'static str },
+    Operator { regex: &'static str },
+    Keyword { regex: &'static str },
+    Integer { regex: &'static str, base: u16 },
+    Identifier { regex: &'static str },
 }
 
+impl TokenType {
+    fn bound(&self) -> &'static str {
+        match self {
+            TokenType::Keyword { .. } => r"\b",
+            _ => "",
+        }
+    }
 
+    fn regex(&self) -> &'static str {
+        match self {
+            TokenType::Symbol { regex }
+            | TokenType::Operator { regex }
+            | TokenType::Keyword { regex }
+            | TokenType::Identifier { regex }
+            | TokenType::Integer { regex, .. } => regex,
+        }
+    }
 
-
-enum TokenType2<'a> {
-    Symbol(&'a str),
-    Operator(&'a str),
-    Keyword(&'a str),
-    Integer(&'a str, u16),
-    Identifier(&'a str)
+    fn prepare(&self) -> String {
+        format!("{}{}{}{}", r"^", self.regex(), self.bound(), r"\s*")
+    }
 }
 
+struct TokenDef {
+    ttype: &'static TokenType,
+    regex: Regex,
+}
 
+impl TokenDef {
+    fn create(ttype: &'static TokenType) -> TokenDef {
+        TokenDef {
+            ttype: ttype,
+            regex: Regex::new(&ttype.prepare()).unwrap(),
+        }
+    }
+}
+
+const RAW_PATTERNS: [TokenType; 16] = [
+    TokenType::Symbol { regex: r"\{" },
+    TokenType::Symbol { regex: r"\}" },
+    TokenType::Symbol { regex: r"\(" },
+    TokenType::Symbol { regex: r"\)" },
+    TokenType::Symbol { regex: r";" },
+    TokenType::Operator { regex:r"-" },
+    TokenType::Operator { regex: r"~" },
+    TokenType::Operator { regex: r"!" },
+    TokenType::Operator { regex: r"\+" },
+    TokenType::Operator { regex: r"\*" },
+    TokenType::Operator { regex: r"/" },
+    TokenType::Keyword { regex: r"int\b" },
+    TokenType::Keyword { regex: r"return\b" },
+    TokenType::Integer { regex: r"0x[0-9a-fA-F]+", base: 16 },
+    // TokenType::Integer { regex: r"0[0-7]+", base: 8), // Might not be correct
+    TokenType::Integer { regex: r"[0-9]+", base: 10 },
+    TokenType::Identifier { regex: r"[a-zA-Z]+" },
+];
+
+fn fail(message: &'static str) {
+    panic!(message);
+}
 
 fn lex(code: &String) -> std::collections::VecDeque<(&str, &TokenType)> {
     let mut source = code.as_str();
 
-    let raw_patterns = [
-        (r"\{", &TokenType::Symbol),
-        (r"\}", &TokenType::Symbol),
-        (r"\(", &TokenType::Symbol),
-        (r"\)", &TokenType::Symbol),
-        (r";", &TokenType::Symbol),
-        (r"-", &TokenType::Symbol),
-        (r"~", &TokenType::Operator),
-        (r"!", &TokenType::Operator),
-        (r"\+", &TokenType::Operator),
-        (r"\*", &TokenType::Operator),
-        (r"/", &TokenType::Operator),
-        (r"int", &TokenType::Keyword),
-        (r"return", &TokenType::Keyword),
-        (r"0x[0-9a-fA-F]+", &TokenType::Integer),
-        (r"0[0-7]+", &TokenType::Integer),
-        (r"[0-9]+", &TokenType::Integer),
-        (r"[a-zA-Z]", &TokenType::Identifier),
-    ];
-
-    // let test = [
-    //     TokenType2::Symbol(SimpleToken {regex: r"\{"})
-    // ];
-
-
-
-    let mut patterns = Vec::with_capacity(raw_patterns.len());
-
-    for raw_pattern in raw_patterns.iter() {
-        let whitespace = match &raw_pattern.1 {
-            TokenType::Keyword => r"\s+",
-            _ => r"\s*",
-        };
-        let regex = format!(r"^{}{}", raw_pattern.0, whitespace);
-        patterns.push((Regex::new(&regex).unwrap(), raw_pattern.1));
-    }
+    let patterns: Vec<TokenDef> = RAW_PATTERNS.iter().map(TokenDef::create).collect();
 
     let mut tokens = std::collections::VecDeque::new();
 
     while !source.is_empty() {
         for pattern in &patterns {
-            let m = pattern.0.find(&source);
+            let m = pattern.regex.find(&source);
             if m != None {
                 let tok = m.unwrap();
-                tokens.push_back((tok.as_str().trim(), pattern.1));
+                tokens.push_back((tok.as_str().trim(), pattern.ttype));
                 source = &source[tok.end()..];
+                println!("{}", tok.as_str().trim());
                 break;
             }
         }
+        fail("Unenpected token");
     }
 
     tokens
 }
 
-
 struct Program {
-    function: Function
+    function: Function,
 }
 
 enum Statement {
-    Return(Return)
+    Return(Return),
 }
 
 struct Function {
     name: String,
-    statement: Statement
+    statement: Statement,
 }
 
 struct Return {
-    exp: Expression
+    exp: Expression,
 }
 
 struct UnaryOperation {
     operator: char,
-    exp: Expression
+    exp: Expression,
 }
 
 enum Expression {
     UnOp(Box<UnaryOperation>),
-    Const(i32)
+    Const(i32),
 }
-
-
 
 fn parse(mut tokens: std::collections::VecDeque<(&str, &TokenType)>) {
     parse_fn(tokens);
 }
 
 fn parse_fn(mut tokens: std::collections::VecDeque<(&str, &TokenType)>) {
-    
-    let tok = tokens.pop_front().unwrap();
-    match (tok.0, tok.1) {
-        ("int", TokenType::Keyword) => (),
-        _ => panic!("Expected the 'int' keyword")
-    }
-    
-    let tok = tokens.pop_front().unwrap();
-    let name = match tok.1 {
-        TokenType::Identifier => tok.0,
-        _ => panic!("Expected an identifier")
-    };
+
+    // let tok = tokens.pop_front().unwrap();
+    // match (tok.0, tok.1) {
+    //     ("int", TokenType::Keyword) => (),
+    //     _ => panic!("Expected the 'int' keyword")
+    // }
+
+    // let tok = tokens.pop_front().unwrap();
+    // let name = match tok.1 {
+    //     TokenType::Identifier => tok.0,
+    //     _ => panic!("Expected an identifier")
+    // };
 
     // Function {
     //     name: String::from(name),
