@@ -1,5 +1,6 @@
 extern crate regex;
 
+use std::collections::VecDeque;
 use std::env;
 use std::fs::File;
 use std::io::prelude::*;
@@ -16,15 +17,62 @@ fn main() {
     f.read_to_string(&mut source).expect("cannot read file");
 
     let tokens = lex(&source);
+    print_tokens(&tokens);
     parse(tokens);
 }
 
+#[derive(Debug)]
+enum Keyword {
+    Int,
+    Return,
+}
+
+#[derive(Debug)]
+enum Symbol {
+    LeftBrace,
+    RightBrace,
+    LeftParenthesis,
+    RightParenthesis,
+    Semicolon,
+}
+
+#[derive(Debug)]
+enum Operator {
+    Negate,
+    Not,
+    Bang,
+    Plus,
+    Star,
+    Divide,
+}
+
+#[derive(Debug)]
+enum Integer {
+    Decimal = 10,
+    Hexadecimal = 16,
+}
+
+#[derive(Debug)]
 enum TokenType {
-    Symbol { regex: &'static str },
-    Operator { regex: &'static str },
-    Keyword { regex: &'static str },
-    Integer { regex: &'static str, base: u16 },
-    Identifier { regex: &'static str },
+    Symbol {
+        regex: &'static str,
+        stype: Symbol,
+    },
+    Operator {
+        regex: &'static str,
+        otype: Operator,
+    },
+    Keyword {
+        regex: &'static str,
+        ktype: Keyword,
+    },
+    Integer {
+        regex: &'static str,
+        itype: Integer,
+    },
+    Identifier {
+        regex: &'static str,
+    },
 }
 
 impl TokenType {
@@ -37,9 +85,9 @@ impl TokenType {
 
     fn regex(&self) -> &'static str {
         match self {
-            TokenType::Symbol { regex }
-            | TokenType::Operator { regex }
-            | TokenType::Keyword { regex }
+            TokenType::Symbol { regex, .. }
+            | TokenType::Operator { regex, .. }
+            | TokenType::Keyword { regex, .. }
             | TokenType::Identifier { regex }
             | TokenType::Integer { regex, .. } => regex,
         }
@@ -64,31 +112,83 @@ impl TokenDef {
     }
 }
 
+struct Token {
+    ttype: &'static TokenType,
+    value: Option<String>,
+}
+
 const RAW_PATTERNS: [TokenType; 16] = [
-    TokenType::Symbol { regex: r"\{" },
-    TokenType::Symbol { regex: r"\}" },
-    TokenType::Symbol { regex: r"\(" },
-    TokenType::Symbol { regex: r"\)" },
-    TokenType::Symbol { regex: r";" },
-    TokenType::Operator { regex:r"-" },
-    TokenType::Operator { regex: r"~" },
-    TokenType::Operator { regex: r"!" },
-    TokenType::Operator { regex: r"\+" },
-    TokenType::Operator { regex: r"\*" },
-    TokenType::Operator { regex: r"/" },
-    TokenType::Keyword { regex: r"int\b" },
-    TokenType::Keyword { regex: r"return\b" },
-    TokenType::Integer { regex: r"0x[0-9a-fA-F]+", base: 16 },
+    TokenType::Symbol {
+        regex: r"\{",
+        stype: Symbol::LeftBrace,
+    },
+    TokenType::Symbol {
+        regex: r"\}",
+        stype: Symbol::RightBrace,
+    },
+    TokenType::Symbol {
+        regex: r"\(",
+        stype: Symbol::LeftParenthesis,
+    },
+    TokenType::Symbol {
+        regex: r"\)",
+        stype: Symbol::RightParenthesis,
+    },
+    TokenType::Symbol {
+        regex: r";",
+        stype: Symbol::Semicolon,
+    },
+    TokenType::Operator {
+        regex: r"-",
+        otype: Operator::Negate,
+    },
+    TokenType::Operator {
+        regex: r"~",
+        otype: Operator::Not,
+    },
+    TokenType::Operator {
+        regex: r"!",
+        otype: Operator::Bang,
+    },
+    TokenType::Operator {
+        regex: r"\+",
+        otype: Operator::Plus,
+    },
+    TokenType::Operator {
+        regex: r"\*",
+        otype: Operator::Star,
+    },
+    TokenType::Operator {
+        regex: r"/",
+        otype: Operator::Divide,
+    },
+    TokenType::Keyword {
+        regex: r"int",
+        ktype: Keyword::Int,
+    },
+    TokenType::Keyword {
+        regex: r"return",
+        ktype: Keyword::Return,
+    },
+    TokenType::Integer {
+        regex: r"0x[0-9a-fA-F]+",
+        itype: Integer::Hexadecimal,
+    },
     // TokenType::Integer { regex: r"0[0-7]+", base: 8), // Might not be correct
-    TokenType::Integer { regex: r"[0-9]+", base: 10 },
-    TokenType::Identifier { regex: r"[a-zA-Z]+" },
+    TokenType::Integer {
+        regex: r"[0-9]+",
+        itype: Integer::Decimal,
+    },
+    TokenType::Identifier {
+        regex: r"[a-zA-Z]+",
+    },
 ];
 
 fn fail(message: &'static str) {
     panic!(message);
 }
 
-fn lex(code: &String) -> std::collections::VecDeque<(&str, &TokenType)> {
+fn lex(code: &String) -> VecDeque<Token> {
     let mut source = code.as_str();
 
     let patterns: Vec<TokenDef> = RAW_PATTERNS.iter().map(TokenDef::create).collect();
@@ -96,17 +196,31 @@ fn lex(code: &String) -> std::collections::VecDeque<(&str, &TokenType)> {
     let mut tokens = std::collections::VecDeque::new();
 
     while !source.is_empty() {
+        let mut found = false;
         for pattern in &patterns {
             let m = pattern.regex.find(&source);
             if m != None {
                 let tok = m.unwrap();
-                tokens.push_back((tok.as_str().trim(), pattern.ttype));
+                let val = match pattern.ttype {
+                    TokenType::Integer { .. } | TokenType::Identifier { .. } => {
+                        Some(String::from(tok.as_str().trim()))
+                    }
+                    _ => None,
+                };
+
+                tokens.push_back(Token {
+                    value: val,
+                    ttype: pattern.ttype,
+                });
                 source = &source[tok.end()..];
-                println!("{}", tok.as_str().trim());
+                found = true;
                 break;
             }
         }
-        fail("Unenpected token");
+
+        if !found {
+            fail("Unenpected token while lexing");
+        }
     }
 
     tokens
@@ -117,16 +231,12 @@ struct Program {
 }
 
 enum Statement {
-    Return(Return),
+    Return(Expression),
 }
 
 struct Function {
     name: String,
     statement: Statement,
-}
-
-struct Return {
-    exp: Expression,
 }
 
 struct UnaryOperation {
@@ -136,29 +246,83 @@ struct UnaryOperation {
 
 enum Expression {
     UnOp(Box<UnaryOperation>),
-    Const(i32),
+    Const(u32),
 }
 
-fn parse(mut tokens: std::collections::VecDeque<(&str, &TokenType)>) {
-    parse_fn(tokens);
+macro_rules! simple_match {
+    ($tokens:expr, $type:pat) => {
+        match $tokens.pop_front() {
+            Some(Token { ttype: $type, .. }) => (),
+            Some(Token { ttype, .. }) => panic!(format!("Unexpected token '{:?}'.", ttype)),
+            _ => panic!("Unexpected Token while parsing"),
+        }
+    };
+}
+fn print_tokens(tokens: &VecDeque<Token>) {
+    for tok in tokens {
+        println!("{:?}", tok.ttype);
+    }
 }
 
-fn parse_fn(mut tokens: std::collections::VecDeque<(&str, &TokenType)>) {
 
-    // let tok = tokens.pop_front().unwrap();
-    // match (tok.0, tok.1) {
-    //     ("int", TokenType::Keyword) => (),
-    //     _ => panic!("Expected the 'int' keyword")
-    // }
+fn parse(mut tokens: VecDeque<Token>) {
+    parse_fn(&mut tokens);
+}
 
-    // let tok = tokens.pop_front().unwrap();
-    // let name = match tok.1 {
-    //     TokenType::Identifier => tok.0,
-    //     _ => panic!("Expected an identifier")
-    // };
+fn parse_fn(mut tokens: &mut VecDeque<Token>) {
+    let _return_type = match tokens.pop_front() {
+        Some(Token {
+            ttype:
+                TokenType::Keyword {
+                    ktype: Keyword::Int,
+                    ..
+                },
+            ..
+        }) => Keyword::Int,
+        _ => panic!("Unexpected Token"),
+    };
 
-    // Function {
-    //     name: String::from(name),
-    //     statement: String::from("")
-    // }
+    let name = match tokens.pop_front() {
+        Some(Token {
+            ttype: TokenType::Identifier { .. },
+            value,
+        }) => value,
+        _ => panic!("Unexpected Token"),
+    };
+
+    simple_match!(&mut tokens, TokenType::Symbol { stype: Symbol::LeftParenthesis, .. });
+    simple_match!(&mut tokens, TokenType::Symbol { stype: Symbol::RightParenthesis, .. });
+    simple_match!(&mut tokens, TokenType::Symbol { stype: Symbol::LeftBrace, .. });
+
+    let stmt = parse_statement(&mut tokens);
+
+    simple_match!(&mut tokens, TokenType::Symbol { stype: Symbol::RightBrace, .. });
+}
+
+fn parse_statement(mut tokens: &mut VecDeque<Token>) -> Statement {
+    match tokens.pop_front() {
+        Some(Token{ ttype:TokenType::Keyword {ktype: Keyword::Return, ..}, .. }) => {
+            let exp = parse_exp(&mut tokens);
+            simple_match!(&mut tokens, TokenType::Symbol { stype: Symbol::Semicolon, .. });
+            Statement::Return(exp)
+        },
+        _ => panic!("Unexpected token in stmt")
+    }
+}
+
+fn parse_exp(mut tokens: &mut VecDeque<Token>) -> Expression {
+    // let tok = tokens.pop_front();
+    match tokens.pop_front() {
+        Some(Token { ttype: TokenType::Integer {itype, ..}, value: Some(ref num) }) => {
+            let int = match itype {
+                Integer::Decimal => num.parse::<u32>().unwrap(),
+                Integer::Hexadecimal => {
+                    u32::from_str_radix(num.trim_left_matches("0x"), 16).unwrap()
+                }
+            };
+            let int : u32 = 12;
+            return Expression::Const(int);
+        },
+        _ => panic!("Unexpected token in exp")
+    }
 }
