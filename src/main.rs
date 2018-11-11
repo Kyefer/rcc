@@ -4,6 +4,7 @@ use std::io::prelude::*;
 
 mod lexer;
 mod parser;
+mod generator;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -17,5 +18,8 @@ fn main() {
     let tokens = lexer::lex(&source);
     // lexer::print_tokens(&tokens);
     let prog = parser::parse(tokens);
-    parser::print_program(prog);
+    parser::print_program(&prog);
+    let assemby = generator::generate(&prog, generator::InstructionSet::x86);
+    generator::print_asm(&assemby);
+    generator::write(&assemby, &mut std::io::stdout());
 }
