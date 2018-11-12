@@ -193,7 +193,6 @@ pub fn lex(code: &String) -> VecDeque<Token> {
         }
 
         if !found {
-            println!("{}", source);
             panic!("Unenpected token while lexing");
         }
     }

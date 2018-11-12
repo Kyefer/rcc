@@ -4,45 +4,76 @@ use std::fmt;
 
 #[derive(Debug)]
 pub enum Instruction {
-    global(String),
-    mov { dst: Param, src: Param },
-    ret,
-    text,
-    cmp { arg0: Param, arg1: Param },
-    add { src: Param, dst: Param },
-    sub { src: Param, dst: Param },
-    imul { src: Param, dst: Param },
-    sete { dst: Param },
-    not { dst: Param },
-    neg { dst: Param },
-    push { src: Param },
-    idiv { dst: Param },
-    pop { dst: Param },
-    label(String),
+    Directive(Directive, String),
+    Label(String),
+    NoArgInst(NoArgInst),
+    SingleArgInst(SingleArgInst, Param),
+    DoubleArgInst(DoubleArgInst, Param, Param),
 }
+
+trait ToAsm {
+    fn to_asm(&self) -> String;
+}
+
+macro_rules! asm_from_name {
+    ($enumname: ident { $($enumval: ident),*}) => {
+        #[derive(Debug)]
+        pub enum $enumname {
+            $(
+                $enumval,
+            )*
+        }
+        impl ToAsm for $enumname {
+            fn to_asm(&self) -> String {
+                match self {
+                    $(
+                        $enumname::$enumval => String::from(stringify!($enumval)).to_lowercase(),
+                    )*
+                }
+            }
+        }
+    };
+}
+
+asm_from_name!(Directive { Globl });
+asm_from_name!(NoArgInst { Ret });
+asm_from_name!(SingleArgInst {
+    Sete,
+    Not,
+    Neg,
+    Push,
+    Idiv,
+    Pop
+});
+asm_from_name!(DoubleArgInst {
+    Mov,
+    Cmp,
+    Add,
+    Sub,
+    Imul
+});
+
+asm_from_name!(Register {
+    RAX,
+    RBX,
+    RCX,
+    RDX,
+    AL
+});
 
 #[derive(Debug)]
 pub enum Param {
     Const(u32),
-    Str(String),
+    // Str(String),
     Register(Register),
-}
-
-#[derive(Debug)]
-pub enum Register {
-    rax,
-    rbx,
-    rcx,
-    rdx,
-    al,
 }
 
 impl ToString for Param {
     fn to_string(&self) -> String {
         match self {
             Param::Const(int) => String::from(format!("${}", int)),
-            Param::Str(string) => string.clone(),
-            Param::Register(reg) => String::from(format!("%{}", reg)),
+            // Param::Str(string) => string.clone(),
+            Param::Register(reg) => String::from(format!("%{}", reg.to_asm())),
         }
     }
 }
@@ -57,27 +88,27 @@ pub fn generate(prog: &Program) -> Vec<Instruction> {
     generate_prog(&prog)
 }
 
-pub fn generate_prog(prog: &Program) -> Vec<Instruction> {
+fn generate_prog(prog: &Program) -> Vec<Instruction> {
     generate_fn(&prog.function)
 }
 
-pub fn generate_fn(func: &Function) -> Vec<Instruction> {
+fn generate_fn(func: &Function) -> Vec<Instruction> {
     combine(
         vec![
-            Instruction::global(func.name.clone()),
-            Instruction::label(func.name.clone()),
+            Instruction::Directive(Directive::Globl, func.name.clone()),
+            Instruction::Label(func.name.clone()),
         ],
         generate_stmt(&func.statement),
     )
 }
 
-pub fn generate_stmt(stmt: &Statement) -> Vec<Instruction> {
+fn generate_stmt(stmt: &Statement) -> Vec<Instruction> {
     match stmt {
-        Statement::Return(exp) => append(generate_exp(exp), Instruction::ret),
+        Statement::Return(exp) => append(generate_exp(exp), Instruction::NoArgInst(NoArgInst::Ret)),
     }
 }
 
-pub fn generate_exp(exp: &Expression) -> Vec<Instruction> {
+fn generate_exp(exp: &Expression) -> Vec<Instruction> {
     match exp {
         Expression::Term(term) => generate_term(term),
         Expression::BinaryOperation {
@@ -88,19 +119,22 @@ pub fn generate_exp(exp: &Expression) -> Vec<Instruction> {
             let mut l = generate_exp(left);
             let mut r = generate_term(right);
             let mut op = match operator {
-                Operator::Plus => vec![Instruction::add {
-                    src: Param::Register(Register::rcx),
-                    dst: Param::Register(Register::rax),
-                }],
+                Operator::Plus => vec![Instruction::DoubleArgInst(
+                    DoubleArgInst::Add,
+                    Param::Register(Register::RCX),
+                    Param::Register(Register::RAX),
+                )],
                 Operator::Negate => vec![
-                    Instruction::sub {
-                        src: Param::Register(Register::rax),
-                        dst: Param::Register(Register::rcx),
-                    },
-                    Instruction::mov {
-                        src: Param::Register(Register::rcx),
-                        dst: Param::Register(Register::rax),
-                    },
+                    Instruction::DoubleArgInst(
+                        DoubleArgInst::Sub,
+                        Param::Register(Register::RAX),
+                        Param::Register(Register::RCX),
+                    ),
+                    Instruction::DoubleArgInst(
+                        DoubleArgInst::Mov,
+                        Param::Register(Register::RCX),
+                        Param::Register(Register::RAX),
+                    ),
                 ],
                 _ => panic!(format!("Unexpected operater '{:?}'", operator)),
             };
@@ -112,13 +146,15 @@ pub fn generate_exp(exp: &Expression) -> Vec<Instruction> {
                 popl %ecx
                 <code for operation>
              */
-            l.push(Instruction::push {
-                src: Param::Register(Register::rax),
-            });
+            l.push(Instruction::SingleArgInst(
+                SingleArgInst::Push,
+                Param::Register(Register::RAX),
+            ));
             l.append(&mut r);
-            l.push(Instruction::pop {
-                dst: Param::Register(Register::rcx),
-            });
+            l.push(Instruction::SingleArgInst(
+                SingleArgInst::Pop,
+                Param::Register(Register::RCX),
+            ));
             l.append(&mut op);
             l
         }
@@ -136,26 +172,28 @@ fn generate_term(term: &Term) -> Vec<Instruction> {
             let mut l = generate_term(left);
             let mut r = generate_factor(right);
             let mut op = match operator {
-                Operator::Star => vec![Instruction::imul {
-                    src: Param::Register(Register::rcx),
-                    dst: Param::Register(Register::rax),
-                }],
+                Operator::Star => vec![Instruction::DoubleArgInst(
+                    DoubleArgInst::Imul,
+                    Param::Register(Register::RCX),
+                    Param::Register(Register::RAX),
+                )],
                 Operator::Divide => vec![
-                    Instruction::mov {
-                        src: Param::Register(Register::rax),
-                        dst: Param::Register(Register::rbx),
-                    },
-                    Instruction::mov {
-                        src: Param::Register(Register::rcx),
-                        dst: Param::Register(Register::rax),
-                    },
-                    Instruction::mov {
-                        src: Param::Const(0),
-                        dst: Param::Register(Register::rdx),
-                    },
-                    Instruction::idiv {
-                        dst: Param::Register(Register::rbx),
-                    },
+                    Instruction::DoubleArgInst(
+                        DoubleArgInst::Mov,
+                        Param::Register(Register::RAX),
+                        Param::Register(Register::RBX),
+                    ),
+                    Instruction::DoubleArgInst(
+                        DoubleArgInst::Mov,
+                        Param::Register(Register::RCX),
+                        Param::Register(Register::RAX),
+                    ),
+                    Instruction::DoubleArgInst(
+                        DoubleArgInst::Mov,
+                        Param::Const(0),
+                        Param::Register(Register::RDX),
+                    ),
+                    Instruction::SingleArgInst(SingleArgInst::Idiv, Param::Register(Register::RBX)),
                 ],
                 _ => panic!(format!("Unexpected operater '{:?}'", operator)),
             };
@@ -167,13 +205,15 @@ fn generate_term(term: &Term) -> Vec<Instruction> {
                 popl %ecx
                 <code for operation>
              */
-            l.push(Instruction::push {
-                src: Param::Register(Register::rax),
-            });
+            l.push(Instruction::SingleArgInst(
+                SingleArgInst::Push,
+                Param::Register(Register::RAX),
+            ));
             l.append(&mut r);
-            l.push(Instruction::pop {
-                dst: Param::Register(Register::rcx),
-            });
+            l.push(Instruction::SingleArgInst(
+                SingleArgInst::Pop,
+                Param::Register(Register::RCX),
+            ));
             l.append(&mut op);
             l
         }
@@ -183,41 +223,44 @@ fn generate_term(term: &Term) -> Vec<Instruction> {
 fn generate_factor(factor: &Factor) -> Vec<Instruction> {
     match factor {
         Factor::Expression(exp) => generate_exp(exp),
-        Factor::Const(int) => vec![Instruction::mov {
-            src: Param::Const(*int),
-            dst: Param::Register(Register::rax),
-        }],
-        Factor::UnaryOperation { operator, factor } => match operator {
-            Operator::Negate => append(
-                generate_factor(factor),
-                Instruction::neg {
-                    dst: Param::Register(Register::rax),
-                },
-            ),
-            Operator::Not => append(
-                generate_factor(factor),
-                Instruction::not {
-                    dst: Param::Register(Register::rax),
-                },
-            ),
-            Operator::Bang => combine(
-                generate_factor(factor),
-                vec![
-                    Instruction::cmp {
-                        arg0: Param::Const(0),
-                        arg1: Param::Register(Register::rax),
-                    },
-                    Instruction::mov {
-                        src: Param::Const(0),
-                        dst: Param::Register(Register::rax),
-                    },
-                    Instruction::sete {
-                        dst: Param::Register(Register::al),
-                    },
-                ],
-            ),
-            _ => panic!(format!("Unexpected operater '{:?}'", operator)),
-        },
+        Factor::Const(int) => vec![Instruction::DoubleArgInst(
+            DoubleArgInst::Mov,
+            Param::Const(*int),
+            Param::Register(Register::RAX),
+        )],
+        Factor::UnaryOperation { operator, factor } => {
+            let factor_code = generate_factor(factor);
+            match operator {
+                Operator::Negate => append(
+                    factor_code,
+                    Instruction::SingleArgInst(SingleArgInst::Neg, Param::Register(Register::RAX)),
+                ),
+                Operator::Not => append(
+                    factor_code,
+                    Instruction::SingleArgInst(SingleArgInst::Not, Param::Register(Register::RAX)),
+                ),
+                Operator::Bang => combine(
+                    factor_code,
+                    vec![
+                        Instruction::DoubleArgInst(
+                            DoubleArgInst::Cmp,
+                            Param::Const(0),
+                            Param::Register(Register::RAX),
+                        ),
+                        Instruction::DoubleArgInst(
+                            DoubleArgInst::Mov,
+                            Param::Const(0),
+                            Param::Register(Register::RAX),
+                        ),
+                        Instruction::SingleArgInst(
+                            SingleArgInst::Sete,
+                            Param::Register(Register::AL),
+                        ),
+                    ],
+                ),
+                _ => panic!(format!("Unexpected operater '{:?}'", operator)),
+            }
+        }
     }
 }
 
@@ -226,25 +269,15 @@ fn combine<T>(mut left: Vec<T>, mut right: Vec<T>) -> Vec<T> {
     left
 }
 
-fn prepend<T>(left: T, mut right: Vec<T>) -> Vec<T> {
-    let mut pre = vec![left];
-    pre.append(&mut right);
-    pre
-}
+// fn prepend<T>(left: T, mut right: Vec<T>) -> Vec<T> {
+//     let mut pre = vec![left];
+//     pre.append(&mut right);
+//     pre
+// }
 
 fn append<T>(mut left: Vec<T>, right: T) -> Vec<T> {
     left.push(right);
     left
-}
-
-/**
- * Formats a string to write to the given file,
- * calling to_string() on the parameters
- */
-macro_rules! write_with_param {
-    ($file:expr, $format:expr, $($arg:expr),*) => {
-            writeln!($file, $format, $($arg.to_string(),)*)
-    };
 }
 
 /**
@@ -253,22 +286,19 @@ macro_rules! write_with_param {
 pub fn write<T: std::io::Write>(instructions: &Vec<Instruction>, file: &mut T) {
     for inst in instructions {
         let _res = match inst {
-            Instruction::text => write_with_param!(file, ".text",),
-            Instruction::global(name) => write_with_param!(file, ".globl {}", name),
-            Instruction::label(name) => write_with_param!(file, "{}:", name),
-            Instruction::ret => write_with_param!(file, "\tret",),
-            Instruction::not { dst } => write_with_param!(file, "\tnot\t{}", dst),
-            Instruction::neg { dst } => write_with_param!(file, "\tneg\t{}", dst),
-            Instruction::sete { dst } => write_with_param!(file, "\tsete\t{}", dst),
-            Instruction::pop { dst } => write_with_param!(file, "\tpop\t{}",  dst),
-            Instruction::idiv { dst } => write_with_param!(file, "\tidiv\t{}",  dst),
-            Instruction::push { src } => write_with_param!(file, "\tpush\t{}",  src),
-            Instruction::mov { src, dst } => write_with_param!(file, "\tmov\t{}, {}", src, dst),
-            Instruction::add { src, dst } => write_with_param!(file, "\tadd\t{}, {}", src, dst),
-            Instruction::sub { src, dst } => write_with_param!(file, "\tsub\t{}, {}", src, dst),
-            Instruction::imul { src, dst } => write_with_param!(file, "\timul\t{}, {}", src, dst),
-            Instruction::cmp { arg0, arg1 } => write_with_param!(file, "\tcmp\t{}, {}", arg0, arg1),
-            // _ => panic!("Not yet implemented"),
+            Instruction::Directive(dir, other) => writeln!(file, ".{} {}", dir.to_asm(), other),
+            Instruction::Label(label) => writeln!(file, "{}:", label),
+            Instruction::NoArgInst(inst) => writeln!(file, "\t{}", inst.to_asm()),
+            Instruction::SingleArgInst(inst, arg) => {
+                writeln!(file, "\t{}\t{}", inst.to_asm(), arg.to_string())
+            },
+            Instruction::DoubleArgInst(inst, src, dst) => writeln!(
+                file,
+                "\t{}\t{}, {}",
+                inst.to_asm(),
+                src.to_string(),
+                dst.to_string()
+            )
         };
     }
 }
