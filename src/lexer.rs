@@ -170,7 +170,7 @@ pub fn lex(code: &String) -> VecDeque<Token> {
     let patterns: Vec<TokenDef> = RAW_PATTERNS.iter().map(TokenDef::create).collect();
 
     let mut tokens = std::collections::VecDeque::new();
-
+    source = source.trim();
     while !source.is_empty() {
         let mut found = false;
         for pattern in &patterns {
@@ -193,6 +193,7 @@ pub fn lex(code: &String) -> VecDeque<Token> {
         }
 
         if !found {
+            println!("{}", source);
             panic!("Unenpected token while lexing");
         }
     }
