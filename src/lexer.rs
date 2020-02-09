@@ -200,7 +200,7 @@ pub fn lex(code: &String) -> VecDeque<Token> {
     tokens
 }
 
-pub fn print_tokens(tokens: &VecDeque<Token>) {
+pub fn debug(tokens: &VecDeque<Token>) {
     for tok in tokens {
         println!("{:?}", tok.ttype);
     }

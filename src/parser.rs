@@ -149,11 +149,12 @@ fn parse_exp(mut tokens: &mut VecDeque<Token>) -> Expression {
 fn parse_term(mut tokens: &mut VecDeque<Token>) -> Term {
     let mut term = Term::Factor(parse_factor(&mut tokens));
     loop {
-        match tokens.get(0) {
-            Some(Token {
-                ttype: TokenType::Operator { otype, .. },
-                ..
-            }) => match otype {
+        if let Some(Token {
+            ttype: TokenType::Operator { otype, .. },
+            ..
+        }) = tokens.get(0)
+        {
+            match otype {
                 Operator::Star | Operator::Divide => {
                     tokens.pop_front();
                     let next_factor = parse_factor(&mut tokens);
@@ -166,10 +167,9 @@ fn parse_term(mut tokens: &mut VecDeque<Token>) -> Term {
                 _ => {
                     break;
                 }
-            },
-            _ => {
-                break;
             }
+        } else {
+            break;
         }
     }
     term
@@ -220,7 +220,7 @@ fn parse_factor(mut tokens: &mut VecDeque<Token>) -> Factor {
             let int = match itype {
                 Integer::Decimal => num.parse::<u32>().unwrap(),
                 Integer::Hexadecimal => {
-                    u32::from_str_radix(num.trim_left_matches("0x"), 16).unwrap()
+                    u32::from_str_radix(num.trim_start_matches("0x"), 16).unwrap()
                 }
             };
             Factor::Const(int)
@@ -229,7 +229,7 @@ fn parse_factor(mut tokens: &mut VecDeque<Token>) -> Factor {
     }
 }
 
-pub fn print_program(prog: &Program) {
+pub fn debug(prog: &Program) {
     print_func(&prog.function);
 }
 
