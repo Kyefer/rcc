@@ -1,5 +1,4 @@
 extern crate regex;
-use std::collections::VecDeque;
 
 #[derive(Debug)]
 pub enum Keyword {
@@ -34,25 +33,11 @@ pub enum Integer {
 
 #[derive(Debug)]
 pub enum TokenType {
-    Symbol {
-        regex: &'static str,
-        stype: Symbol,
-    },
-    Operator {
-        regex: &'static str,
-        otype: Operator,
-    },
-    Keyword {
-        regex: &'static str,
-        ktype: Keyword,
-    },
-    Integer {
-        regex: &'static str,
-        itype: Integer,
-    },
-    Identifier {
-        regex: &'static str,
-    },
+    Symbol { regex: &'static str, stype: Symbol },
+    Operator { regex: &'static str, otype: Operator },
+    Keyword { regex: &'static str, ktype: Keyword },
+    Integer { regex: &'static str, itype: Integer },
+    Identifier { regex: &'static str },
 }
 
 impl TokenType {
@@ -86,7 +71,7 @@ struct TokenDef {
 impl TokenDef {
     fn create(ttype: &'static TokenType) -> TokenDef {
         TokenDef {
-            ttype: ttype,
+            ttype,
             regex: regex::Regex::new(&ttype.prepare()).unwrap(),
         }
     }
@@ -159,30 +144,26 @@ const RAW_PATTERNS: [TokenType; 16] = [
         regex: r"[0-9]+",
         itype: Integer::Decimal,
     },
-    TokenType::Identifier {
-        regex: r"[a-zA-Z]+",
-    },
+    TokenType::Identifier { regex: r"[a-zA-Z]+" },
 ];
 
-pub fn lex(code: &String) -> VecDeque<Token> {
+pub fn lex(code: &String) -> Vec<Token> {
     let mut source = code.as_str();
 
     let patterns: Vec<TokenDef> = RAW_PATTERNS.iter().map(TokenDef::create).collect();
 
-    let mut tokens = std::collections::VecDeque::new();
+    let mut tokens = Vec::new();
     source = source.trim();
     while !source.is_empty() {
         let mut found = false;
         for pattern in &patterns {
-            if let Some(tok) =  pattern.regex.find(&source){
+            if let Some(tok) = pattern.regex.find(&source) {
                 let val = match pattern.ttype {
-                    TokenType::Integer { .. } | TokenType::Identifier { .. } => {
-                        Some(String::from(tok.as_str().trim()))
-                    }
+                    TokenType::Integer { .. } | TokenType::Identifier { .. } => Some(String::from(tok.as_str().trim())),
                     _ => None,
                 };
 
-                tokens.push_back(Token {
+                tokens.push(Token {
                     value: val,
                     ttype: pattern.ttype,
                 });
@@ -193,6 +174,7 @@ pub fn lex(code: &String) -> VecDeque<Token> {
         }
 
         if !found {
+            println!("{}", source);
             panic!("Unenpected token while lexing");
         }
     }
@@ -200,8 +182,10 @@ pub fn lex(code: &String) -> VecDeque<Token> {
     tokens
 }
 
-pub fn debug(tokens: &VecDeque<Token>) {
+pub fn debug(tokens: &[Token]) {
+    println!("LEXING OUTPUT:");
     for tok in tokens {
         println!("{:?}", tok.ttype);
     }
+    println!();
 }

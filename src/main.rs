@@ -9,7 +9,7 @@ mod generator;
 mod lexer;
 mod parser;
 
-static DEBUG_FLAG: &'static str = "RCC_DEBUG";
+static DEBUG_FLAG: &str = "RCC_DEBUG";
 
 fn main() {
     let path = env::args().nth(1).expect("expected a file to compile");

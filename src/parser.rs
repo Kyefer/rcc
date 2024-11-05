@@ -40,10 +40,7 @@ pub enum Term {
 #[derive(Debug)]
 pub enum Factor {
     Expression(Box<Expression>),
-    UnaryOperation {
-        operator: Operator,
-        factor: Box<Factor>,
-    },
+    UnaryOperation { operator: Operator, factor: Box<Factor> },
     Const(u32),
 }
 
@@ -57,20 +54,18 @@ macro_rules! simple_match {
     };
 }
 
-pub fn parse(mut tokens: VecDeque<Token>) -> Program {
+pub fn parse(tokens: Vec<Token>) -> Program {
     Program {
-        function: parse_fn(&mut tokens),
+        function: parse_fn(&mut VecDeque::from(tokens)),
     }
 }
 
 fn parse_fn(mut tokens: &mut VecDeque<Token>) -> Function {
     let _return_type = match tokens.pop_front() {
         Some(Token {
-            ttype:
-                TokenType::Keyword {
-                    ktype: Keyword::Int,
-                    ..
-                },
+            ttype: TokenType::Keyword {
+                ktype: Keyword::Int, ..
+            },
             ..
         }) => Keyword::Int,
         _ => panic!("Unexpected Token"),
@@ -93,20 +88,15 @@ fn parse_fn(mut tokens: &mut VecDeque<Token>) -> Function {
 
     simple_match!(&mut tokens, TokenType::Symbol { stype: Symbol::RightBrace, .. });
 
-    Function {
-        name: name,
-        statement: stmt,
-    }
+    Function { name, statement: stmt }
 }
 
 fn parse_statement(mut tokens: &mut VecDeque<Token>) -> Statement {
     match tokens.pop_front() {
         Some(Token {
-            ttype:
-                TokenType::Keyword {
-                    ktype: Keyword::Return,
-                    ..
-                },
+            ttype: TokenType::Keyword {
+                ktype: Keyword::Return, ..
+            },
             ..
         }) => {
             let exp = parse_exp(&mut tokens);
@@ -119,57 +109,52 @@ fn parse_statement(mut tokens: &mut VecDeque<Token>) -> Statement {
 
 fn parse_exp(mut tokens: &mut VecDeque<Token>) -> Expression {
     let mut exp = Expression::Term(parse_term(&mut tokens));
-    loop {
-        match tokens.get(0) {
-            Some(Token {
-                ttype: TokenType::Operator { otype, .. },
-                ..
-            }) => match otype {
-                Operator::Plus | Operator::Negate => {
-                    tokens.pop_front();
-                    let next_term = parse_term(&mut tokens);
-                    exp = Expression::BinaryOperation {
-                        left: Box::new(exp),
-                        operator: *otype,
-                        right: next_term,
-                    };
-                }
-                _ => {
-                    break;
-                }
-            },
+
+    while let Some(Token {
+        ttype: TokenType::Operator { otype, .. },
+        ..
+    }) = tokens.get(0)
+    {
+        match otype {
+            Operator::Plus | Operator::Negate => {
+                tokens.pop_front();
+                let next_term = parse_term(&mut tokens);
+                exp = Expression::BinaryOperation {
+                    left: Box::new(exp),
+                    operator: *otype,
+                    right: next_term,
+                };
+            }
             _ => {
                 break;
             }
         }
     }
+
     exp
 }
 
 fn parse_term(mut tokens: &mut VecDeque<Token>) -> Term {
     let mut term = Term::Factor(parse_factor(&mut tokens));
-    loop {
-        if let Some(Token {
-            ttype: TokenType::Operator { otype, .. },
-            ..
-        }) = tokens.get(0)
-        {
-            match otype {
-                Operator::Star | Operator::Divide => {
-                    tokens.pop_front();
-                    let next_factor = parse_factor(&mut tokens);
-                    term = Term::BinaryOperation {
-                        left: Box::new(term),
-                        operator: *otype,
-                        right: next_factor,
-                    };
-                }
-                _ => {
-                    break;
-                }
+
+    while let Some(Token {
+        ttype: TokenType::Operator { otype, .. },
+        ..
+    }) = tokens.get(0)
+    {
+        match otype {
+            Operator::Star | Operator::Divide => {
+                tokens.pop_front();
+                let next_factor = parse_factor(&mut tokens);
+                term = Term::BinaryOperation {
+                    left: Box::new(term),
+                    operator: *otype,
+                    right: next_factor,
+                };
             }
-        } else {
-            break;
+            _ => {
+                break;
+            }
         }
     }
     term
@@ -178,11 +163,10 @@ fn parse_term(mut tokens: &mut VecDeque<Token>) -> Term {
 fn parse_factor(mut tokens: &mut VecDeque<Token>) -> Factor {
     match tokens.pop_front() {
         Some(Token {
-            ttype:
-                TokenType::Symbol {
-                    stype: Symbol::LeftParenthesis,
-                    ..
-                },
+            ttype: TokenType::Symbol {
+                stype: Symbol::LeftParenthesis,
+                ..
+            },
             ..
         }) => {
             let exp = parse_exp(&mut tokens);
@@ -219,9 +203,7 @@ fn parse_factor(mut tokens: &mut VecDeque<Token>) -> Factor {
         }) => {
             let int = match itype {
                 Integer::Decimal => num.parse::<u32>().unwrap(),
-                Integer::Hexadecimal => {
-                    u32::from_str_radix(num.trim_start_matches("0x"), 16).unwrap()
-                }
+                Integer::Hexadecimal => u32::from_str_radix(num.trim_start_matches("0x"), 16).unwrap(),
             };
             Factor::Const(int)
         }
@@ -230,7 +212,9 @@ fn parse_factor(mut tokens: &mut VecDeque<Token>) -> Factor {
 }
 
 pub fn debug(prog: &Program) {
+    println!("PARSING OUTPUT:");
     print_func(&prog.function);
+    println!();
 }
 
 fn print_func(func: &Function) {
@@ -250,11 +234,7 @@ fn print_stmt(stmt: &Statement) {
 fn print_exp(exp: &Expression) -> String {
     match exp {
         Expression::Term(term) => print_term(&term),
-        Expression::BinaryOperation {
-            left,
-            operator,
-            right,
-        } => {
+        Expression::BinaryOperation { left, operator, right } => {
             let l = print_exp(left);
             let r = print_term(right);
             format!("{} {} {}", l, get_op(operator), r)
@@ -276,11 +256,7 @@ fn get_op(op: &Operator) -> &str {
 fn print_term(term: &Term) -> String {
     match term {
         Term::Factor(factor) => print_factor(&factor),
-        Term::BinaryOperation {
-            left,
-            operator,
-            right,
-        } => {
+        Term::BinaryOperation { left, operator, right } => {
             let l = print_term(left);
             let r = print_factor(right);
             format!("{} {} {}", l, get_op(operator), r)
@@ -291,9 +267,7 @@ fn print_term(term: &Term) -> String {
 fn print_factor(factor: &Factor) -> String {
     match factor {
         Factor::Expression(exp) => format!("({})", print_exp(exp)),
-        Factor::UnaryOperation { operator, factor } => {
-            format!("{}{}", get_op(operator), print_factor(factor))
-        }
+        Factor::UnaryOperation { operator, factor } => format!("{}{}", get_op(operator), print_factor(factor)),
         Factor::Const(int) => format!("{}", int),
     }
 }

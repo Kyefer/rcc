@@ -82,9 +82,9 @@ pub enum Param {
 impl ToString for Param {
     fn to_string(&self) -> String {
         match self {
-            Param::Const(int) => String::from(format!("${}", int)),
+            Param::Const(int) => format!("${}", int),
             // Param::Str(string) => string.clone(),
-            Param::Register(reg) => String::from(format!("%{}", reg.to_asm())),
+            Param::Register(reg) => format!("%{}", reg.to_asm()),
         }
     }
 }
@@ -103,6 +103,7 @@ pub fn generate(prog: &Program, syntax: &Syntax) -> Vec<String> {
 }
 
 pub fn debug(prog: &Program) {
+    println!("ASSEMBLY OUTPUT:");
     for asm in generate_prog(&prog) {
         println!("{:?}", asm);
     }
